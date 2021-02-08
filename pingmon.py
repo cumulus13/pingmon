@@ -21,7 +21,8 @@ from pydebugger.debug import debug
 class Pingmon(object):
 
 	IP = None
-	CONFIG = configset()
+	CONFIGNAME = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'pingmon.ini')
+	CONFIG = configset(CONFIGNAME)
 	STATUS = {}
 
 	def __init__(self, ip = None):
