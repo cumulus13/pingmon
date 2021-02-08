@@ -53,7 +53,7 @@ class Pingmon(object):
 				else:
 					p = os.popen3(cmd.format(ip, timeout))[1].read()
 				debug(p = p)
-				icon_path = os.path.join(os.path.dirname(__file__), self.CONFIG.get_config('logo', 'jpg', os.path.realpath('logo.jpg')))
+				icon_path = os.path.join(os.path.dirname(__file__), self.CONFIG.get_config('logo', 'jpg', 'logo.jpg'))
 				if "Destination Host Unreachable" in p:
 					notify.send(
 					    "PingMon", 
@@ -63,7 +63,7 @@ class Pingmon(object):
 					        iconpath = os.path.realpath(icon_path),
 					)
 					if sys.platform == 'win32':
-						toaster.show_toast("PingMon", "Connection Lost" + "\n" + "Destination Host Unreachable", icon_path=icon_path, duration = 10)		
+						toaster.show_toast("PingMon", "Connection Lost" + "\n" + "Destination Host Unreachable", icon_path=os.path.realpath(icon_path), duration = 10)		
 					self.LOST = True	
 				elif not p or not p.strip():
 					notify.send(
@@ -74,22 +74,31 @@ class Pingmon(object):
 					        iconpath = os.path.realpath(icon_path),
 					)
 					if sys.platform == 'win32':
-						toaster.show_toast("PingMon", "Connection Lost" + "\n" + "Destination Host Unreachable", icon_path=icon_path, duration = 10)
+						toaster.show_toast("PingMon", "Connection Lost" + "\n" + "Destination Host Unreachable", icon_path=os.path.realpath(icon_path), duration = 10)
 					self.LOST = True
 				elif "icmp_seq" in p and self.LOST:
 					notify.send(
 					    "PingMon", 
-					    "Connection Alive Now !" + "\n" + "Internet connetion alive !", 
+					    "Connection Alive Now !" + "\n" + "Internet connection alive !", 
 					    "Pingmon", 
 					        "ping", 
 					        iconpath = os.path.realpath(icon_path),
 					)
 					if sys.platform == 'win32':
-						toaster.show_toast("PingMon", "Connection Alive Now !" + "\n" + "Internet connetion alive !", icon_path=icon_path, duration = 10)
+						toaster.show_toast("PingMon", "Connection Alive Now !" + "\n" + "Internet connetion alive !", icon_path=os.path.realpath(icon_path), duration = 10)
 					self.LOST = False
 				time.sleep(int(self.CONFIG.get_config('sleep', 'time', '10')))
 		except KeyboardInterrupt:
-			print(make_colors("Terminate ....", 'lw', 'r'))
+			print(make_colors("Terminate ! ....", 'lw', 'r'))
+			notify.send(
+			    "PingMon", 
+			    "Terminate !", 
+			    "Pingmon", 
+			        "ping", 
+			        iconpath = os.path.realpath(icon_path),
+			)
+			if sys.platform == 'win32':
+				toaster.show_toast("PingMon", "Connection Alive Now !" + "\n" + "Terminate !", icon_path=os.path.realpath(icon_path), duration = 10)
 			sys.exit()
 
 	@classmethod
