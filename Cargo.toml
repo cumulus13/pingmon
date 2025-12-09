@@ -1,0 +1,45 @@
+[[bin]]
+name = "pingmon"
+path = "src/pingmon.rs"
+
+[[bin]]
+name = "pingmon-bar"
+path = "src/pingmon_bar.rs"
+
+[package]
+name = "pingmon"
+version = "0.1.0"
+edition = "2021"
+authors = [ "Hadi Cahyadi <cumulus13@gmail.com>",]
+description = "Real-time ping monitor with beautiful ASCII charts, TTL display, and statistics"
+license = "MIT"
+repository = "https://github.com/cumulus13/pingmon"
+homepage = "https://github.com/cumulus13/pingmon"
+documentation = "https://docs.rs/pingmon"
+readme = "README.md"
+keywords = [ "ping", "monitor", "network", "latency", "chart",]
+categories = [ "command-line-utilities", "network-programming",]
+
+[dependencies]
+surge-ping = "0.8"
+colored = "2.1"
+term_size = "0.3"
+ctrlc = "3.4"
+rand = "0.8"
+rasciichart = "0.2.9"
+
+[dependencies.tokio]
+version = "1.35"
+features = [ "full",]
+
+[dependencies.clap]
+version = "4.4"
+features = [ "derive",]
+
+[target."cfg(unix)".dependencies.nix]
+version = "0.27"
+features = [ "user",]
+
+[target."cfg(windows)".dependencies.winapi]
+version = "0.3"
+features = [ "winsock2",]
