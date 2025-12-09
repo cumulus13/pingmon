@@ -28,7 +28,7 @@ Real-time ping monitor with beautiful ASCII charts, TTL display, and comprehensi
 
 ✨ **Two Chart Types:**
 - `pingmon` - Line chart using ASCII characters
-- `pingmon-bar` - Vertical bar chart with filled blocks
+- `pingmon2` - Vertical bar chart with filled blocks
 
 📊 **Real-time Visualization:**
 - Live latency chart that updates every ping
@@ -65,18 +65,18 @@ cargo build --release
 
 The binaries will be in `target/release/`:
 - `pingmon` (line chart)
-- `pingmon-bar` (bar chart)
+- `pingmon2` (bar chart)
 
 ## Usage
 
 ### Basic Usage
 
 ```bash
-# Ping Google DNS with line chart
+# Ping Google DNS (8.8.8.8) with line chart
 pingmon
 
 # Ping specific host with bar chart
-pingmon-bar 1.1.1.1
+pingmon2 1.1.1.1
 
 # Ping with custom interval
 pingmon google.com -i 0.5

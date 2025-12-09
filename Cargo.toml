@@ -8,7 +8,7 @@ path = "src/pingmon_bar.rs"
 
 [package]
 name = "pingmon"
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 authors = [ "Hadi Cahyadi <cumulus13@gmail.com>",]
 description = "Real-time ping monitor with beautiful ASCII charts, TTL display, and statistics"
