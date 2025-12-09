@@ -5,8 +5,6 @@
 
 Real-time ping monitor with beautiful ASCII charts, TTL display, and comprehensive statistics.
 
-![pingmon screenshot](https://raw.githubusercontent.com/cumulus13/pingmon/main/screenshots/pingmon.png)
-
 ## Screenshot
 
 <p align="center">
