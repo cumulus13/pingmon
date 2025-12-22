@@ -4,6 +4,9 @@
 
 use std::collections::VecDeque;
 use std::net::IpAddr;
+use std::env;
+use std::path::PathBuf;
+// use std::io;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 use std::time::Duration;
 use std::thread;
@@ -12,6 +15,7 @@ use clap::Parser;
 use colored::*;
 use rasciichart::{plot_with_config, Config};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence, IcmpPacket};
+use gntp::{GntpClient, NotificationType, NotifyOptions, Resource};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about = "Ping monitor with real-time chart")]
@@ -89,6 +93,83 @@ impl Stats {
             (self.lost as f64 / self.sent as f64) * 100.0 
         }
     }
+}
+
+fn get_icon_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
+    if cfg!(debug_assertions) {
+        // Development mode
+        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("pingmon.png"))
+    } else {
+        // Production mode
+        let exe_path = env::current_exe()?;
+        let exe_dir = exe_path.parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Cannot get executable directory"))?;
+        
+        let possible_paths = vec![
+            exe_dir.join("pingmon.png"),
+            exe_dir.join("icons").join("pingmon.png"),
+            exe_dir.join("resources").join("pingmon.png"),
+            env::current_dir()?.join("pingmon.png"),
+            PathBuf::from("pingmon.png"),
+        ];
+        
+        // Find first existing file
+        for path in possible_paths {
+            if path.exists() {
+                return Ok(path);
+            }
+        }
+        
+        // Return default even if not exists
+        Ok(PathBuf::from("pingmon.png"))
+    }
+}
+
+fn send_notification(title: &str, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let icon_mode = gntp::IconMode::Binary;
+    let mut client = GntpClient::new("pingmon").with_icon_mode(icon_mode);
+    let icon_path = get_icon_path()?;
+
+    // let notif_icon = match Resource::from_file(&icon_path) {
+    //     Ok(icon) => {
+    //         Some(icon)
+    //     }
+    //     Err(_e) => {
+    //         None
+    //     }
+    // };
+    let notif_icon = Resource::from_file(&icon_path).ok();
+
+    let mut notification = if let Some(ref icon) = notif_icon {
+        NotificationType::new("alert")
+            .with_display_name("Alert")
+            .with_enabled(true)
+            .with_icon(icon.clone())
+    } else {
+        NotificationType::new("alert")
+            .with_display_name("Alert")
+            .with_enabled(true)
+    };
+    
+    if let Some(ref icon) = notif_icon {
+        notification = notification.with_icon(icon.clone());
+    }
+
+    client.register(vec![notification])?;
+
+    let mut options = NotifyOptions::new();
+    if let Some(ref icon) = notif_icon {
+        options = options.with_icon(icon.clone());
+    }
+
+    client.notify_with_options(
+        "alert",
+        title,
+        message,
+        options
+    )?;
+
+    Ok(())
 }
 
 fn ping_once_sync(host: &str) -> (f64, u8, bool) {
@@ -188,6 +269,7 @@ fn render_chart_only(args: &Args, history: &VecDeque<f64>, lat: f64, ttl: u8, ok
         print!("{}", format!(" {:.2} ms ", lat).white().on_blue());
     } else {
         print!("{}", " TIMEOUT ".white().on_red());
+        let _ = send_notification("pingmon TIMEOUT", "Connetion Timeout");
     }
     print!(" | ");
     print!("{} ", "TTL:".bright_green().bold());
