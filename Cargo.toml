@@ -1,11 +1,11 @@
 bin = [
     { name = "pingmon", path = "src/pingmon.rs" },
-    { name = "pingmon-bar", path = "src/pingmon2.rs" },
+    { name = "pingmon2", path = "src/pingmon2.rs" },
 ]
 
 [package]
 name = "pingmon"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 authors = [
     "Hadi Cahyadi <cumulus13@gmail.com>",
