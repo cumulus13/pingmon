@@ -5,7 +5,7 @@ bin = [
 
 [package]
 name = "pingmon"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = [
     "Hadi Cahyadi <cumulus13@gmail.com>",
@@ -29,6 +29,7 @@ categories = [
 ]
 exclude = [
     "screenshots/",
+    "downloads/",
 ]
 
 [dependencies]
