@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ master ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ master ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -20,10 +20,10 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        rust: [stable, beta, nightly]
+        rust: [stable]
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -53,7 +53,7 @@ jobs:
 
     - name: Run tests
       run: cargo test --verbose
-      continue-on-error: ${{ matrix.rust == 'nightly' }}
+      continue-on-error: false
 
   fmt:
     name: Rustfmt
@@ -85,19 +85,22 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: bandwidthmon
-            asset_name: bandwidthmon-linux-amd64
+            pingmon_name: pingmon
+            pingmon_bar_name: pingmon2
+            asset_suffix: linux-amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: bandwidthmon.exe
-            asset_name: bandwidthmon-windows-amd64.exe
+            pingmon_name: pingmon.exe
+            pingmon_bar_name: pingmon2.exe
+            asset_suffix: windows-amd64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: bandwidthmon
-            asset_name: bandwidthmon-macos-amd64
+            pingmon_name: pingmon
+            pingmon_bar_name: pingmon2
+            asset_suffix: macos-amd64
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -106,12 +109,22 @@ jobs:
     - name: Build release
       run: cargo build --release --target ${{ matrix.target }}
 
-    - name: Strip binary (Linux/macOS)
+    - name: Strip binaries (Linux/macOS)
       if: matrix.os != 'windows-latest'
-      run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      run: |
+        strip target/${{ matrix.target }}/release/${{ matrix.pingmon_name }}
+        strip target/${{ matrix.target }}/release/${{ matrix.pingmon_bar_name }}
 
-    - name: Upload artifact
+    - name: Upload pingmon artifact
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ matrix.asset_name }}
-        path: target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+        name: pingmon-${{ matrix.asset_suffix }}
+        path: target/${{ matrix.target }}/release/${{ matrix.pingmon_name }}
+        if-no-files-found: error
+
+    - name: Upload pingmon2 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pingmon2-${{ matrix.asset_suffix }}
+        path: target/${{ matrix.target }}/release/${{ matrix.pingmon_bar_name }}
+        if-no-files-found: error

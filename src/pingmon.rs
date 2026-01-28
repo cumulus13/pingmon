@@ -6,9 +6,9 @@ use std::collections::VecDeque;
 use std::net::IpAddr;
 use std::env;
 use std::path::PathBuf;
-// use std::io;
+use std::fs;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::thread;
 use std::io::{self, Write};
 use clap::Parser;
@@ -16,6 +16,7 @@ use colored::*;
 use rasciichart::{plot_with_config, Config};
 use surge_ping::{Client, Config as PingConfig, PingIdentifier, PingSequence, IcmpPacket};
 use gntp::{GntpClient, NotificationType, NotifyOptions, Resource};
+use serde::Deserialize;
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about = "Ping monitor with real-time chart")]
@@ -43,6 +44,146 @@ struct Args {
     /// Chart-only mode: only show chart and current status
     #[clap(short, long)]
     chart_only: bool,
+    
+    /// Timeout threshold in seconds before sending notification
+    #[clap(short, long)]
+    timeout_threshold: Option<u64>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct AppConfig {
+    #[serde(default = "default_timeout")]
+    pingmon_timeout: u64,
+}
+
+fn default_timeout() -> u64 {
+    60 // 1 minute default
+}
+
+impl AppConfig {
+    fn load() -> Self {
+        // Try to get from environment variable first
+        if let Ok(timeout_str) = env::var("PINGMON_TIMEOUT") {
+            if let Ok(timeout) = timeout_str.parse::<u64>() {
+                return AppConfig {
+                    pingmon_timeout: timeout,
+                };
+            }
+        }
+
+        // Try to load from config file
+        if let Some(config_path) = get_config_file() {
+            if let Ok(contents) = fs::read_to_string(&config_path) {
+                // Try different formats based on file extension
+                let ext = config_path.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
+                
+                match ext {
+                    "toml" => {
+                        if let Ok(config) = toml::from_str::<AppConfig>(&contents) {
+                            return config;
+                        }
+                    }
+                    "json" => {
+                        if let Ok(config) = serde_json::from_str::<AppConfig>(&contents) {
+                            return config;
+                        }
+                    }
+                    "yml" | "yaml" => {
+                        if let Ok(config) = serde_yaml::from_str::<AppConfig>(&contents) {
+                            return config;
+                        }
+                    }
+                    "ini" => {
+                        // Simple INI parser for pingmon_timeout
+                        for line in contents.lines() {
+                            let line = line.trim();
+                            if line.starts_with("pingmon_timeout") {
+                                if let Some(value) = line.split('=').nth(1) {
+                                    if let Ok(timeout) = value.trim().parse::<u64>() {
+                                        return AppConfig {
+                                            pingmon_timeout: timeout,
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    "env" => {
+                        // Parse .env file
+                        for line in contents.lines() {
+                            let line = line.trim();
+                            if line.starts_with("PINGMON_TIMEOUT") {
+                                if let Some(value) = line.split('=').nth(1) {
+                                    if let Ok(timeout) = value.trim().parse::<u64>() {
+                                        return AppConfig {
+                                            pingmon_timeout: timeout,
+                                        };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // Return default if nothing found
+        AppConfig::default()
+    }
+}
+
+fn get_config_file() -> Option<PathBuf> {
+    let config_files = if cfg!(windows) {
+        vec![
+            dirs::home_dir()?.join(".pingmon").join(".env"),
+            dirs::config_dir()?.join(".pingmon").join(".env"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.ini"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.ini"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.toml"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.toml"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.json"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.json"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.yml"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.yml"),
+        ]
+    } else {
+        vec![
+            dirs::home_dir()?.join(".pingmon").join(".env"),
+            dirs::config_dir()?.join(".pingmon").join(".env"),
+            dirs::config_dir()?.join(".env"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.ini"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.ini"),
+            dirs::config_dir()?.join("pingmon.ini"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.toml"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.toml"),
+            dirs::config_dir()?.join("pingmon.toml"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.json"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.json"),
+            dirs::config_dir()?.join("pingmon.json"),
+            
+            dirs::home_dir()?.join(".pingmon").join("pingmon.yml"),
+            dirs::config_dir()?.join(".pingmon").join("pingmon.yml"),
+            dirs::config_dir()?.join("pingmon.yml"),
+        ]
+    };
+
+    for path in config_files {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    None
 }
 
 #[derive(Clone)]
@@ -95,6 +236,50 @@ impl Stats {
     }
 }
 
+struct TimeoutTracker {
+    timeout_start: Option<Instant>,
+    notification_sent: bool,
+    threshold_seconds: u64,
+}
+
+impl TimeoutTracker {
+    fn new(threshold_seconds: u64) -> Self {
+        Self {
+            timeout_start: None,
+            notification_sent: false,
+            threshold_seconds,
+        }
+    }
+
+    fn update(&mut self, is_timeout: bool) -> bool {
+        if is_timeout {
+            if self.timeout_start.is_none() {
+                // First timeout detected
+                self.timeout_start = Some(Instant::now());
+                self.notification_sent = false;
+            } else if !self.notification_sent {
+                // Check if timeout duration exceeds threshold
+                if let Some(start) = self.timeout_start {
+                    let elapsed = start.elapsed().as_secs();
+                    if elapsed >= self.threshold_seconds {
+                        self.notification_sent = true;
+                        return true; // Signal to send notification
+                    }
+                }
+            }
+        } else {
+            // Connection restored
+            self.timeout_start = None;
+            self.notification_sent = false;
+        }
+        false
+    }
+
+    fn get_timeout_duration(&self) -> Option<u64> {
+        self.timeout_start.map(|start| start.elapsed().as_secs())
+    }
+}
+
 fn get_icon_path() -> Result<PathBuf, Box<dyn std::error::Error>> {
     if cfg!(debug_assertions) {
         // Development mode
@@ -130,14 +315,6 @@ fn send_notification(title: &str, message: &str) -> Result<(), Box<dyn std::erro
     let mut client = GntpClient::new("pingmon").with_icon_mode(icon_mode);
     let icon_path = get_icon_path()?;
 
-    // let notif_icon = match Resource::from_file(&icon_path) {
-    //     Ok(icon) => {
-    //         Some(icon)
-    //     }
-    //     Err(_e) => {
-    //         None
-    //     }
-    // };
     let notif_icon = Resource::from_file(&icon_path).ok();
 
     let mut notification = if let Some(ref icon) = notif_icon {
@@ -230,12 +407,16 @@ fn clear_line_to_end() {
     print!("\x1B[K");
 }
 
-fn render_static_line(stats: &Stats, lat: f64, ttl: u8, ok: bool) {
+fn render_static_line(stats: &Stats, lat: f64, ttl: u8, ok: bool, timeout_duration: Option<u64>) {
     // Simple one-line output for static mode
     let status = if ok { 
         format!("{:.2}ms", lat).green() 
-    } else { 
-        "TIMEOUT".red() 
+    } else {
+        let mut timeout_msg = "TIMEOUT".to_string();
+        if let Some(duration) = timeout_duration {
+            timeout_msg.push_str(&format!(" ({}s)", duration));
+        }
+        timeout_msg.red()
     };
     
     let ttl_str = if ok { 
@@ -260,7 +441,7 @@ fn render_static_line(stats: &Stats, lat: f64, ttl: u8, ok: bool) {
     println!();
 }
 
-fn render_chart_only(args: &Args, history: &VecDeque<f64>, lat: f64, ttl: u8, ok: bool, chart_width: usize) {
+fn render_chart_only(args: &Args, history: &VecDeque<f64>, lat: f64, ttl: u8, ok: bool, chart_width: usize, timeout_duration: Option<u64>) {
     move_cursor_home();
 
     // Single status line
@@ -268,8 +449,11 @@ fn render_chart_only(args: &Args, history: &VecDeque<f64>, lat: f64, ttl: u8, ok
     if ok {
         print!("{}", format!(" {:.2} ms ", lat).white().on_blue());
     } else {
-        print!("{}", " TIMEOUT ".white().on_red());
-        let _ = send_notification("pingmon TIMEOUT", "Connetion Timeout");
+        let mut timeout_msg = " TIMEOUT ".to_string();
+        if let Some(duration) = timeout_duration {
+            timeout_msg = format!(" TIMEOUT ({}s) ", duration);
+        }
+        print!("{}", timeout_msg.white().on_red());
     }
     print!(" | ");
     print!("{} ", "TTL:".bright_green().bold());
@@ -317,7 +501,7 @@ fn render_chart_only(args: &Args, history: &VecDeque<f64>, lat: f64, ttl: u8, ok
     let _ = io::stdout().flush();
 }
 
-fn render_dynamic_screen(args: &Args, stats: &Stats, history: &VecDeque<f64>, lat: f64, ttl: u8, ok: bool, chart_width: usize) {
+fn render_dynamic_screen(args: &Args, stats: &Stats, history: &VecDeque<f64>, lat: f64, ttl: u8, ok: bool, chart_width: usize, timeout_duration: Option<u64>) {
     move_cursor_home();
 
     // Header
@@ -330,7 +514,11 @@ fn render_dynamic_screen(args: &Args, stats: &Stats, history: &VecDeque<f64>, la
     if ok {
         print!("{}", format!(" {:.2} ms ", lat).white().on_blue());
     } else {
-        print!("{}", " TIMEOUT ".white().on_red());
+        let mut timeout_msg = " TIMEOUT ".to_string();
+        if let Some(duration) = timeout_duration {
+            timeout_msg = format!(" TIMEOUT ({}s) ", duration);
+        }
+        print!("{}", timeout_msg.white().on_red());
     }
     print!(" | ");
     print!("{} ", "TTL:".bright_green().bold());
@@ -421,6 +609,13 @@ fn print_final_stats(stats: &Stats) {
 
 fn main() {
     let args = Args::parse();
+    let config = AppConfig::load();
+    
+    // Determine timeout threshold: CLI arg > config/env > default (60)
+    let timeout_threshold = args.timeout_threshold.unwrap_or(config.pingmon_timeout);
+    
+    println!("{}", format!("Timeout notification threshold: {} seconds", timeout_threshold).bright_yellow());
+    
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
@@ -440,6 +635,7 @@ fn main() {
 
     let mut history: VecDeque<f64> = VecDeque::with_capacity(hist_size);
     let mut stats = Stats::new();
+    let mut timeout_tracker = TimeoutTracker::new(timeout_threshold);
 
     // Initial setup
     if !args.static_mode && !args.chart_only {
@@ -475,13 +671,23 @@ fn main() {
             history.pop_front();
         }
 
+        // Check timeout and send notification if threshold exceeded
+        let should_notify = timeout_tracker.update(!ok);
+        if should_notify {
+            let duration = timeout_tracker.get_timeout_duration().unwrap_or(0);
+            let message = format!("Connection timeout for {} seconds to {}", duration, args.host);
+            let _ = send_notification("Pingmon: Connection Timeout", &message);
+        }
+
+        let timeout_duration = timeout_tracker.get_timeout_duration();
+
         // Render output based on mode
         if args.static_mode {
-            render_static_line(&stats, lat, ttl, ok);
+            render_static_line(&stats, lat, ttl, ok, timeout_duration);
         } else if args.chart_only {
-            render_chart_only(&args, &history, lat, ttl, ok, chart_width);
+            render_chart_only(&args, &history, lat, ttl, ok, chart_width, timeout_duration);
         } else {
-            render_dynamic_screen(&args, &stats, &history, lat, ttl, ok, chart_width);
+            render_dynamic_screen(&args, &stats, &history, lat, ttl, ok, chart_width, timeout_duration);
         }
 
         if !running.load(Ordering::SeqCst) { 

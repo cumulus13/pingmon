@@ -1,0 +1,13 @@
+# Pingmon Configuration File (TOML format)
+# Place this file in one of these locations:
+# Windows:
+#   - %USERPROFILE%\.pingmon\pingmon.toml
+#   - %APPDATA%\.pingmon\pingmon.toml
+# Linux/macOS:
+#   - ~/.pingmon/pingmon.toml
+#   - ~/.config/.pingmon/pingmon.toml
+#   - ~/.config/pingmon.toml
+
+# Timeout threshold in seconds before sending Growl notification
+# Default: 60 (1 minute)
+pingmon_timeout = 60

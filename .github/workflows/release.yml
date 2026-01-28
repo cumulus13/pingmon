@@ -10,7 +10,6 @@ env:
 
 permissions:
   contents: write
-  pull-requests: write
 
 jobs:
   create-release:
@@ -21,10 +20,10 @@ jobs:
       release_id: ${{ steps.create_release.outputs.id }}
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Create Release
       id: create_release
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2
       with:
         draft: false
         prerelease: false
@@ -37,32 +36,38 @@ jobs:
     needs: create-release
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_name: bandwidthmon
-            asset_name: bandwidthmon-linux-amd64
+            pingmon_name: pingmon
+            pingmon_bar_name: pingmon2
+            asset_suffix: linux-amd64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            artifact_name: bandwidthmon
-            asset_name: bandwidthmon-linux-musl-amd64
+            pingmon_name: pingmon
+            pingmon_bar_name: pingmon2
+            asset_suffix: linux-musl-amd64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: bandwidthmon.exe
-            asset_name: bandwidthmon-windows-amd64.exe
+            pingmon_name: pingmon.exe
+            pingmon_bar_name: pingmon2.exe
+            asset_suffix: windows-amd64
           - os: macos-latest
             target: x86_64-apple-darwin
-            artifact_name: bandwidthmon
-            asset_name: bandwidthmon-macos-amd64
+            pingmon_name: pingmon
+            pingmon_bar_name: pingmon2
+            asset_suffix: macos-amd64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: bandwidthmon
-            asset_name: bandwidthmon-macos-arm64
+            pingmon_name: pingmon
+            pingmon_bar_name: pingmon2
+            asset_suffix: macos-arm64
 
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
@@ -75,29 +80,50 @@ jobs:
     - name: Build release
       run: cargo build --release --target ${{ matrix.target }}
 
-    - name: Strip binary (Linux/macOS)
+    - name: Strip binaries (Linux/macOS)
       if: matrix.os != 'windows-latest'
-      run: strip target/${{ matrix.target }}/release/${{ matrix.artifact_name }}
+      run: |
+        strip target/${{ matrix.target }}/release/${{ matrix.pingmon_name }} || true
+        strip target/${{ matrix.target }}/release/${{ matrix.pingmon_bar_name }} || true
 
-    - name: Create tarball (Linux/macOS)
+    - name: Create tarballs (Linux/macOS)
       if: matrix.os != 'windows-latest'
       run: |
         cd target/${{ matrix.target }}/release
-        tar czf ../../../${{ matrix.asset_name }}.tar.gz ${{ matrix.artifact_name }}
+        tar czf ../../../pingmon-${{ matrix.asset_suffix }}.tar.gz ${{ matrix.pingmon_name }} README.md LICENSE || tar czf ../../../pingmon-${{ matrix.asset_suffix }}.tar.gz ${{ matrix.pingmon_name }}
+        tar czf ../../../pingmon2-${{ matrix.asset_suffix }}.tar.gz ${{ matrix.pingmon_bar_name }} README.md LICENSE || tar czf ../../../pingmon2-${{ matrix.asset_suffix }}.tar.gz ${{ matrix.pingmon_bar_name }}
 
-    - name: Create zip (Windows)
+    - name: Create zips (Windows)
       if: matrix.os == 'windows-latest'
       shell: pwsh
       run: |
         cd target/${{ matrix.target }}/release
-        Compress-Archive -Path ${{ matrix.artifact_name }} -DestinationPath ../../../${{ matrix.asset_name }}.zip
+        if (Test-Path ../../../README.md) {
+          Compress-Archive -Path ${{ matrix.pingmon_name }}, ../../../README.md, ../../../LICENSE -DestinationPath ../../../pingmon-${{ matrix.asset_suffix }}.zip -ErrorAction SilentlyContinue
+          if (-not $?) {
+            Compress-Archive -Path ${{ matrix.pingmon_name }} -DestinationPath ../../../pingmon-${{ matrix.asset_suffix }}.zip
+          }
+        } else {
+          Compress-Archive -Path ${{ matrix.pingmon_name }} -DestinationPath ../../../pingmon-${{ matrix.asset_suffix }}.zip
+        }
+        
+        if (Test-Path ../../../README.md) {
+          Compress-Archive -Path ${{ matrix.pingmon_bar_name }}, ../../../README.md, ../../../LICENSE -DestinationPath ../../../pingmon2-${{ matrix.asset_suffix }}.zip -ErrorAction SilentlyContinue
+          if (-not $?) {
+            Compress-Archive -Path ${{ matrix.pingmon_bar_name }} -DestinationPath ../../../pingmon2-${{ matrix.asset_suffix }}.zip
+          }
+        } else {
+          Compress-Archive -Path ${{ matrix.pingmon_bar_name }} -DestinationPath ../../../pingmon2-${{ matrix.asset_suffix }}.zip
+        }
 
-    - name: Upload Release Asset
-      uses: softprops/action-gh-release@v1
+    - name: Upload Release Assets
+      uses: softprops/action-gh-release@v2
       with:
         files: |
-          ${{ matrix.asset_name }}.tar.gz
-          ${{ matrix.asset_name }}.zip
+          pingmon-${{ matrix.asset_suffix }}.tar.gz
+          pingmon-${{ matrix.asset_suffix }}.zip
+          pingmon2-${{ matrix.asset_suffix }}.tar.gz
+          pingmon2-${{ matrix.asset_suffix }}.zip
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -108,7 +134,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 

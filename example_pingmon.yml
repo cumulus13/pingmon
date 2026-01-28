@@ -1,0 +1,13 @@
+# Pingmon Configuration File (YAML format)
+# Place this file in one of these locations:
+# Windows:
+#   - %USERPROFILE%\.pingmon\pingmon.yml
+#   - %APPDATA%\.pingmon\pingmon.yml
+# Linux/macOS:
+#   - ~/.pingmon/pingmon.yml
+#   - ~/.config/.pingmon/pingmon.yml
+#   - ~/.config/pingmon.yml
+
+# Timeout threshold in seconds before sending Growl notification
+# Default: 60 (1 minute)
+pingmon_timeout: 60
